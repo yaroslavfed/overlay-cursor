@@ -10,10 +10,16 @@ LPCWSTR getLayoutText() {
     return L"??";
 }
 
+COLORREF lerpColor(COLORREF from, COLORREF to, float t) {
+    BYTE r = GetRValue(from) + (BYTE)((GetRValue(to) - GetRValue(from)) * t);
+    BYTE g = GetGValue(from) + (BYTE)((GetGValue(to) - GetGValue(from)) * t);
+    BYTE b = GetBValue(from) + (BYTE)((GetBValue(to) - GetBValue(from)) * t);
+    return RGB(r, g, b);
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     const wchar_t CLASS_NAME[] = L"OverlayWindow";
 
-    // Регистрация окна
     WNDCLASS wc = {};
     wc.lpfnWndProc = DefWindowProc;
     wc.hInstance = hInstance;
@@ -38,7 +44,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bmi.bmiHeader.biWidth = width;
-    bmi.bmiHeader.biHeight = -height; // верхний левый угол = (0,0)
+    bmi.bmiHeader.biHeight = -height;
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
@@ -57,19 +63,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     SetBkMode(memDC, TRANSPARENT);
 
     LPCWSTR lastText = nullptr;
-
-    auto drawText = [&]() {
-        memset(bits, 0, width * height * 4); // прозрачный фон
-
-        LPCWSTR text = getLayoutText();
-        if (text[0] == L'E') SetTextColor(memDC, RGB(0, 255, 0));
-        else SetTextColor(memDC, RGB(0, 128, 255));
-
-        TextOutW(memDC, 0, 0, text, lstrlenW(text));
-        lastText = text;
-        };
-
-    drawText(); // первый раз
+    COLORREF currentColor = RGB(0, 0, 0);
+    COLORREF targetColor = RGB(0, 0, 0);
 
     MSG msg = {};
     SIZE size = { width, height };
@@ -77,7 +72,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
 
     while (true) {
-        // Обработка сообщений
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) break;
             TranslateMessage(&msg);
@@ -85,19 +79,30 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         }
 
         LPCWSTR text = getLayoutText();
-        if (text != lastText) drawText();
+        // если язык изменился — меняем целевой цвет
+        if (text != lastText) {
+            lastText = text;
+            targetColor = (text[0] == L'E') ? RGB(0, 255, 0) : RGB(0, 128, 255);
+        }
 
-        // Мгновенная позиция overlay у курсора
+        // плавная интерполяция цвета (fade)
+        currentColor = lerpColor(currentColor, targetColor, 0.2f);
+
+        // рисуем текст на прозрачном фоне
+        memset(bits, 0, width * height * 4);
+        SetTextColor(memDC, currentColor);
+        TextOutW(memDC, 0, 0, lastText, lstrlenW(lastText));
+
+        // мгновенная позиция overlay у курсора
         POINT pt;
         GetCursorPos(&pt);
-        POINT pos = { pt.x + 12, pt.y + 12 }; // смещение от курсора
+        POINT pos = { pt.x + 12, pt.y + 12 };
 
         UpdateLayeredWindow(hwnd, screenDC, &pos, &size, memDC, &zero, RGB(0, 0, 0), &blend, ULW_ALPHA);
 
         Sleep(16); // ~60 FPS
     }
 
-    // Очистка
     SelectObject(memDC, oldFont);
     SelectObject(memDC, oldBmp);
     DeleteObject(hFont);
