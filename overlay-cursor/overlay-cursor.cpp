@@ -1,23 +1,102 @@
 ﻿#include <windows.h>
 #include <cstring>
+#include <shellapi.h>
 
-namespace {
-constexpr wchar_t kClassName[] = L"OverlayWindow";
-constexpr int kWidth = 50;
-constexpr int kHeight = 30;
-constexpr int kOffsetPx = 12;
-constexpr int kFrameDelayMs = 16; // ~60 FPS
+#include "Resource.h"
 
-enum class LayoutId {
-    En,
-    Ru,
-    Unknown
-};
+#define WM_TRAYICON (WM_APP + 1)
+#define ID_TRAY_ABOUT 1001
+#define ID_TRAY_EXIT  1002
+
+NOTIFYICONDATA nid = {};
+
+namespace
+{
+    constexpr wchar_t kClassName[] = L"OverlayWindow";
+    constexpr int kWidth = 50;
+    constexpr int kHeight = 30;
+    constexpr int kOffsetPx = 12;
+    constexpr int kFrameDelayMs = 16; // ~60 FPS
+
+    enum class LayoutId
+    {
+        En,
+        Ru,
+        Unknown
+    };
 }
 
-LayoutId getLayoutId() {
+LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg)
+    {
+    case WM_CREATE:
+        {
+            nid.cbSize = sizeof(NOTIFYICONDATA);
+            nid.hWnd = hwnd;
+            nid.uID = 1;
+            nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+            nid.uCallbackMessage = WM_TRAYICON;
+            nid.hIcon = (HICON)LoadImage(
+                GetModuleHandle(NULL),
+                MAKEINTRESOURCE(IDI_APP_ICON),
+                IMAGE_ICON,
+                16, 16,
+                LR_DEFAULTCOLOR
+            );
+            wcscpy_s(nid.szTip, L"Keyboard Layout Overlay");
+
+            Shell_NotifyIcon(NIM_ADD, &nid);
+            break;
+        }
+
+    case WM_TRAYICON:
+        if (lParam == WM_RBUTTONUP)
+        {
+            POINT pt;
+            GetCursorPos(&pt);
+
+            HMENU menu = CreatePopupMenu();
+            AppendMenu(menu, MF_STRING, ID_TRAY_ABOUT, L"About");
+            AppendMenu(menu, MF_SEPARATOR, 0, NULL);
+            AppendMenu(menu, MF_STRING, ID_TRAY_EXIT, L"Quit");
+
+            SetForegroundWindow(hwnd);
+            TrackPopupMenu(menu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, hwnd, NULL);
+            DestroyMenu(menu);
+        }
+        break;
+
+    case WM_COMMAND:
+        switch (LOWORD(wParam))
+        {
+        case ID_TRAY_ABOUT:
+            MessageBox(hwnd, L"Keyboard Layout Overlay\nVersion 1.0", L"About", MB_OK);
+            break;
+
+        case ID_TRAY_EXIT:
+            Shell_NotifyIcon(NIM_DELETE, &nid);
+            DestroyIcon(nid.hIcon);
+            PostQuitMessage(0);
+            break;
+        }
+        break;
+
+    case WM_DESTROY:
+        Shell_NotifyIcon(NIM_DELETE, &nid);
+        DestroyIcon(nid.hIcon);
+        PostQuitMessage(0);
+        break;
+    }
+
+    return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+
+LayoutId getLayoutId()
+{
     HWND foreground = GetForegroundWindow();
-    if (!foreground) {
+    if (!foreground)
+    {
         return LayoutId::Unknown;
     }
 
@@ -30,32 +109,38 @@ LayoutId getLayoutId() {
     return LayoutId::Unknown;
 }
 
-LPCWSTR getLayoutText(LayoutId layoutId) {
-    switch (layoutId) {
+LPCWSTR getLayoutText(LayoutId layoutId)
+{
+    switch (layoutId)
+    {
     case LayoutId::En: return L"EN";
     case LayoutId::Ru: return L"RU";
     default: return L"??";
     }
 }
 
-COLORREF getTargetColor(LayoutId layoutId) {
-    switch (layoutId) {
+COLORREF getTargetColor(LayoutId layoutId)
+{
+    switch (layoutId)
+    {
     case LayoutId::En: return RGB(0, 255, 0);
     case LayoutId::Ru: return RGB(0, 128, 255);
     default: return RGB(180, 180, 180);
     }
 }
 
-COLORREF lerpColor(COLORREF from, COLORREF to, float t) {
+COLORREF lerpColor(COLORREF from, COLORREF to, float t)
+{
     BYTE r = static_cast<BYTE>(GetRValue(from) + (GetRValue(to) - GetRValue(from)) * t);
     BYTE g = static_cast<BYTE>(GetGValue(from) + (GetGValue(to) - GetGValue(from)) * t);
     BYTE b = static_cast<BYTE>(GetBValue(from) + (GetBValue(to) - GetBValue(from)) * t);
     return RGB(r, g, b);
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
+{
     WNDCLASS wc = {};
-    wc.lpfnWndProc = DefWindowProc;
+    wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
     wc.lpszClassName = kClassName;
     RegisterClass(&wc);
@@ -106,13 +191,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     MSG msg = {};
     bool running = true;
-    SIZE size = { kWidth, kHeight };
-    POINT zero = { 0,0 };
-    BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+    SIZE size = {kWidth, kHeight};
+    POINT zero = {0, 0};
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
 
-    while (running) {
-        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) {
+    while (running)
+    {
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+        {
+            if (msg.message == WM_QUIT)
+            {
                 running = false;
                 break;
             }
@@ -123,7 +211,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         LayoutId layoutId = getLayoutId();
         LPCWSTR text = getLayoutText(layoutId);
         // если язык изменился — меняем целевой цвет
-        if (layoutId != lastLayout) {
+        if (layoutId != lastLayout)
+        {
             lastLayout = layoutId;
             lastText = text;
             targetColor = getTargetColor(layoutId);
@@ -140,7 +229,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         // мгновенная позиция overlay у курсора
         POINT pt;
         GetCursorPos(&pt);
-        POINT pos = { pt.x + kOffsetPx, pt.y + kOffsetPx };
+        POINT pos = {pt.x + kOffsetPx, pt.y + kOffsetPx};
 
         UpdateLayeredWindow(hwnd, screenDC, &pos, &size, memDC, &zero, RGB(0, 0, 0), &blend, ULW_ALPHA);
 
