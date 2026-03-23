@@ -1,90 +1,79 @@
-# Overlay Cursor (v1.0)
+# Overlay Cursor
 
-Небольшая утилита для Windows, которая показывает текущую раскладку клавиатуры (`EN`, `RU`, `??`) рядом с курсором.
+A small Windows utility that shows your current keyboard layout (`EN`, `RU`, `??`) right next to the cursor.
 
-Проект рассчитан на два сценария:
-- **просто скачать и пользоваться** (готовый `.exe` из релиза);
-- **доработать под себя** (доступен исходный код и проект Visual Studio).
-
----
-
-## Что есть в release v1.0
-
-В релизе v1.0 доступны:
-- **Source code** (исходники проекта);
-- **готовый `.exe`** для запуска без сборки.
-
-Откройте страницу релиза, скачайте нужный вариант и используйте по вашему сценарию.
+You can:
+- just download the `.exe` and use it;
+- or dive into the code and tweak it however you like.
 
 ---
 
-## Быстрый старт (если нужен только запуск)
+## 🚀 Quick Start
 
-1. Скачайте `overlay-cursor.exe` из **Release v1.0**.
-2. Запустите файл (при необходимости подтвердите запуск в SmartScreen).
-3. После запуска приложение работает в фоне:
-   - в системном трее появляется иконка;
-   - рядом с курсором показывается индикатор раскладки.
-4. Для выхода: **правый клик по иконке в трее → Quit**.
+1. Download `overlay-cursor.exe` from the release.
+2. Run it (if Windows warns you — just confirm).
+3. Done:
+   - an icon will appear in the system tray;
+   - the layout indicator will show near your cursor.
 
-> Рекомендуется запускать приложение после входа в систему (например, через автозагрузку), если вы пользуетесь им постоянно.
+To exit: right-click the tray icon → **Quit**.
 
----
-
-## Что делает приложение
-
-- показывает раскладку около курсора;
-- определяет активную раскладку по foreground-окну;
-- плавно меняет цвет индикатора при переключении языка;
-- обновляется по таймеру с более «лёгким» idle-режимом для снижения нагрузки.
+💡 If you use it often, consider adding it to startup.
 
 ---
 
-## Сборка из исходников (для тех, кто хочет дорабатывать)
+## ✨ Features
 
-### Требования
-- Windows 10/11;
-- Visual Studio 2022 (toolset v143) с C++ workload.
-
-### Как собрать
-1. Откройте `overlay-cursor.sln` в Visual Studio.
-2. Выберите конфигурацию `Release` + платформу `x64` (или нужную вам).
-3. Выполните Build Solution.
-4. Готовый файл появится в папке `bin/...` согласно конфигурации.
+- shows keyboard layout near the cursor;
+- detects layout from the active window;
+- smooth color transition on layout change;
+- low CPU usage (has an idle mode).
 
 ---
 
-## Структура проекта (кратко)
+## 🛠 Build from Source
 
-- `overlay-cursor/overlay-cursor.cpp` — точка входа, окно, message loop, таймер рендера.
-- `overlay-cursor/overlay_renderer.*` — отрисовка overlay и управление GDI-ресурсами.
-- `overlay-cursor/keyboard_layout.*` — определение текущей раскладки, текст/цвет.
-- `overlay-cursor/tray_icon.*` — иконка в трее, добавление/удаление.
-- `overlay-cursor/app_constants.h` — общие константы (размеры, интервалы таймера, и т.д.).
+**Requirements:**
+- Windows 10/11  
+- Visual Studio 2022 (C++ workload)
 
-Такой разбор по файлам позволяет проще менять поведение: например, цвета/тайминги, логику определения раскладки, или UI-часть.
-
----
-
-## Частые доработки
-
-Обычно меняют:
-- цвета для `EN/RU`;
-- размер/позицию индикатора;
-- частоту обновления active/idle;
-- шрифт и стиль текста.
-
-Для этого в первую очередь смотрите `app_constants.h` и `overlay_renderer.cpp`.
+**Steps:**
+1. Open `overlay-cursor.sln`
+2. Select `Release + x64`
+3. Click Build  
+4. The `.exe` will appear in the `bin/` folder
 
 ---
 
-## Ограничения v1.0
+## 📁 Project Structure
 
-- Встроенная логика явно обрабатывает `EN` и `RU`; прочие раскладки показываются как `??`.
-- Приложение ориентировано на Windows и WinAPI/GDI.
+- `overlay-cursor.cpp` — entry point, window, loop
+- `overlay_renderer.*` — rendering
+- `keyboard_layout.*` — layout detection
+- `tray_icon.*` — system tray
+- `app_constants.h` — config/constants
 
 ---
 
-## Обратная связь
+## 🔧 Common Tweaks
 
-Если хотите улучшения (дополнительные языки, настройки, автозапуск, кастомизация UI), создавайте issue или PR.
+- `EN/RU` colors
+- indicator size & position
+- update frequency
+- font and text style
+
+Check: `app_constants.h` and `overlay_renderer.cpp`
+
+---
+
+## ⚠️ Limitations
+
+- only `EN` and `RU` are properly handled (`??` for others)
+- Windows only (WinAPI/GDI)
+
+---
+
+## 💬 Feedback
+
+Want more features (extra languages, settings, auto-start, UI customization)?  
+Feel free to open an issue or PR 👍
