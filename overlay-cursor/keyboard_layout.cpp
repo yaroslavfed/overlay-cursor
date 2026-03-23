@@ -45,9 +45,9 @@ namespace overlay
         switch (layoutId)
         {
         case LayoutId::En:
-            return RGB(0, 255, 0);
+            return RGB(0, 200, 0);
         case LayoutId::Ru:
-            return RGB(0, 128, 255);
+            return RGB(0, 100, 220);
         default:
             return RGB(180, 180, 180);
         }

@@ -24,6 +24,7 @@ namespace overlay
 
     private:
         static COLORREF LerpColor(COLORREF from, COLORREF to, float t);
+        static void DrawTextWithOutline(HDC dc, int x, int y, LPCWSTR text, COLORREF color);
 
         HDC screen_dc_ = nullptr;
         HDC mem_dc_ = nullptr;

@@ -13,6 +13,25 @@ namespace overlay
         BYTE b = static_cast<BYTE>(GetBValue(from) + (GetBValue(to) - GetBValue(from)) * t);
         return RGB(r, g, b);
     }
+    
+    void OverlayRenderer::DrawTextWithOutline(HDC dc, int x, int y, LPCWSTR text, COLORREF color)
+    {
+        int len = lstrlenW(text);
+
+        SetTextColor(dc, RGB(0, 0, 0));
+
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                TextOutW(dc, x + dx, y + dy, text, len);
+            }
+        }
+
+        SetTextColor(dc, color);
+        TextOutW(dc, x, y, text, len);
+    }
 
     bool OverlayRenderer::Initialize()
     {
@@ -61,7 +80,7 @@ namespace overlay
             DEFAULT_CHARSET,
             OUT_DEFAULT_PRECIS,
             CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY,
+            NONANTIALIASED_QUALITY,
             DEFAULT_PITCH | FF_SWISS,
             L"Segoe UI");
 
@@ -140,8 +159,9 @@ namespace overlay
         }
 
         std::memset(bits_, 0, kOverlayWidth * kOverlayHeight * 4);
-        SetTextColor(mem_dc_, current_color_);
-        TextOutW(mem_dc_, 0, 0, last_text_, lstrlenW(last_text_));
+        constexpr int kTextPadding = 2;
+
+        DrawTextWithOutline(mem_dc_, kTextPadding, kTextPadding, last_text_, current_color_);
         UpdateLayeredWindow(hwnd, screen_dc_, &overlay_pos, &size_, mem_dc_, &zero_, RGB(0, 0, 0), &blend_, ULW_ALPHA);
 
         return layout_changed || position_changed || color_changed;
