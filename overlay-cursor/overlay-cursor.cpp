@@ -7,6 +7,7 @@
 #define WM_TRAYICON (WM_APP + 1)
 #define ID_TRAY_ABOUT 1001
 #define ID_TRAY_EXIT  1002
+#define ID_RENDER_TIMER 1
 
 NOTIFYICONDATA nid = {};
 
@@ -16,7 +17,9 @@ namespace
     constexpr int kWidth = 50;
     constexpr int kHeight = 30;
     constexpr int kOffsetPx = 12;
-    constexpr int kFrameDelayMs = 16; // ~60 FPS
+    constexpr int kActiveFrameDelayMs = 33; // ~30 FPS: плавность при движении/анимации
+    constexpr int kIdleFrameDelayMs = 120;  // в простое снижаем частоту опроса
+    constexpr float kColorLerpStep = 0.2f;
 
     enum class LayoutId
     {
@@ -24,6 +27,197 @@ namespace
         Ru,
         Unknown
     };
+
+    struct RenderContext
+    {
+        HDC screenDC = nullptr;
+        HDC memDC = nullptr;
+        HBITMAP hBitmap = nullptr;
+        HGDIOBJ oldBmp = nullptr;
+        HFONT hFont = nullptr;
+        HGDIOBJ oldFont = nullptr;
+        void* bits = nullptr;
+        SIZE size = {kWidth, kHeight};
+        POINT zero = {0, 0};
+        BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+        bool initialized = false;
+    };
+
+    RenderContext gRender;
+    LayoutId gLastLayout = LayoutId::Unknown;
+    LPCWSTR gLastText = L"??";
+    COLORREF gCurrentColor = RGB(0, 0, 0);
+    COLORREF gTargetColor = RGB(180, 180, 180);
+    POINT gLastPos = {-1, -1};
+    int gCurrentTimerDelayMs = kActiveFrameDelayMs;
+}
+
+LayoutId getLayoutId()
+{
+    HWND foreground = GetForegroundWindow();
+    if (!foreground)
+    {
+        return LayoutId::Unknown;
+    }
+
+    DWORD threadId = GetWindowThreadProcessId(foreground, NULL);
+    HKL layout = GetKeyboardLayout(threadId);
+    WORD lang = LOWORD(reinterpret_cast<UINT_PTR>(layout));
+
+    if (lang == 0x419) return LayoutId::Ru;
+    if (lang == 0x409) return LayoutId::En;
+    return LayoutId::Unknown;
+}
+
+LPCWSTR getLayoutText(LayoutId layoutId)
+{
+    switch (layoutId)
+    {
+    case LayoutId::En: return L"EN";
+    case LayoutId::Ru: return L"RU";
+    default: return L"??";
+    }
+}
+
+COLORREF getTargetColor(LayoutId layoutId)
+{
+    switch (layoutId)
+    {
+    case LayoutId::En: return RGB(0, 255, 0);
+    case LayoutId::Ru: return RGB(0, 128, 255);
+    default: return RGB(180, 180, 180);
+    }
+}
+
+COLORREF lerpColor(COLORREF from, COLORREF to, float t)
+{
+    BYTE r = static_cast<BYTE>(GetRValue(from) + (GetRValue(to) - GetRValue(from)) * t);
+    BYTE g = static_cast<BYTE>(GetGValue(from) + (GetGValue(to) - GetGValue(from)) * t);
+    BYTE b = static_cast<BYTE>(GetBValue(from) + (GetBValue(to) - GetBValue(from)) * t);
+    return RGB(r, g, b);
+}
+
+bool initRenderResources()
+{
+    gRender.screenDC = GetDC(NULL);
+    if (!gRender.screenDC)
+    {
+        return false;
+    }
+
+    gRender.memDC = CreateCompatibleDC(gRender.screenDC);
+    if (!gRender.memDC)
+    {
+        ReleaseDC(NULL, gRender.screenDC);
+        gRender.screenDC = nullptr;
+        return false;
+    }
+
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = kWidth;
+    bmi.bmiHeader.biHeight = -kHeight;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    gRender.hBitmap = CreateDIBSection(gRender.memDC, &bmi, DIB_RGB_COLORS, &gRender.bits, NULL, 0);
+    if (!gRender.hBitmap || !gRender.bits)
+    {
+        DeleteDC(gRender.memDC);
+        ReleaseDC(NULL, gRender.screenDC);
+        gRender.memDC = nullptr;
+        gRender.screenDC = nullptr;
+        return false;
+    }
+    gRender.oldBmp = SelectObject(gRender.memDC, gRender.hBitmap);
+
+    gRender.hFont = CreateFontW(
+        12, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_SWISS, L"Segoe UI"
+    );
+    if (!gRender.hFont)
+    {
+        SelectObject(gRender.memDC, gRender.oldBmp);
+        DeleteObject(gRender.hBitmap);
+        DeleteDC(gRender.memDC);
+        ReleaseDC(NULL, gRender.screenDC);
+        gRender.hBitmap = nullptr;
+        gRender.memDC = nullptr;
+        gRender.screenDC = nullptr;
+        return false;
+    }
+    gRender.oldFont = SelectObject(gRender.memDC, gRender.hFont);
+    SetBkMode(gRender.memDC, TRANSPARENT);
+
+    gRender.initialized = true;
+    return true;
+}
+
+void cleanupRenderResources()
+{
+    if (!gRender.initialized)
+    {
+        return;
+    }
+
+    SelectObject(gRender.memDC, gRender.oldFont);
+    SelectObject(gRender.memDC, gRender.oldBmp);
+    DeleteObject(gRender.hFont);
+    DeleteObject(gRender.hBitmap);
+    DeleteDC(gRender.memDC);
+    ReleaseDC(NULL, gRender.screenDC);
+
+    gRender = {};
+}
+
+void updateTimerInterval(HWND hwnd, int delayMs)
+{
+    if (gCurrentTimerDelayMs == delayMs)
+    {
+        return;
+    }
+
+    SetTimer(hwnd, ID_RENDER_TIMER, delayMs, NULL);
+    gCurrentTimerDelayMs = delayMs;
+}
+
+bool renderOverlay(HWND hwnd, bool force)
+{
+    LayoutId layoutId = getLayoutId();
+    LPCWSTR text = getLayoutText(layoutId);
+    bool layoutChanged = false;
+    if (layoutId != gLastLayout)
+    {
+        gLastLayout = layoutId;
+        gLastText = text;
+        gTargetColor = getTargetColor(layoutId);
+        layoutChanged = true;
+        force = true;
+    }
+
+    COLORREF nextColor = lerpColor(gCurrentColor, gTargetColor, kColorLerpStep);
+    bool colorChanged = (nextColor != gCurrentColor);
+    gCurrentColor = nextColor;
+
+    POINT pt;
+    GetCursorPos(&pt);
+    POINT pos = {pt.x + kOffsetPx, pt.y + kOffsetPx};
+    bool positionChanged = (pos.x != gLastPos.x || pos.y != gLastPos.y);
+    gLastPos = pos;
+
+    if (!force && !positionChanged && !colorChanged)
+    {
+        return false;
+    }
+
+    std::memset(gRender.bits, 0, kWidth * kHeight * 4);
+    SetTextColor(gRender.memDC, gCurrentColor);
+    TextOutW(gRender.memDC, 0, 0, gLastText, lstrlenW(gLastText));
+    UpdateLayeredWindow(hwnd, gRender.screenDC, &pos, &gRender.size, gRender.memDC, &gRender.zero, RGB(0, 0, 0), &gRender.blend, ULW_ALPHA);
+    return layoutChanged || positionChanged || colorChanged;
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -75,66 +269,29 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             break;
 
         case ID_TRAY_EXIT:
-            Shell_NotifyIcon(NIM_DELETE, &nid);
-            DestroyIcon(nid.hIcon);
-            PostQuitMessage(0);
+            DestroyWindow(hwnd);
             break;
         }
         break;
 
+    case WM_TIMER:
+        if (wParam == ID_RENDER_TIMER && gRender.initialized)
+        {
+            bool isActive = renderOverlay(hwnd, false);
+            updateTimerInterval(hwnd, isActive ? kActiveFrameDelayMs : kIdleFrameDelayMs);
+        }
+        break;
+
     case WM_DESTROY:
+        KillTimer(hwnd, ID_RENDER_TIMER);
         Shell_NotifyIcon(NIM_DELETE, &nid);
         DestroyIcon(nid.hIcon);
+        cleanupRenderResources();
         PostQuitMessage(0);
         break;
     }
 
     return DefWindowProc(hwnd, msg, wParam, lParam);
-}
-
-LayoutId getLayoutId()
-{
-    HWND foreground = GetForegroundWindow();
-    if (!foreground)
-    {
-        return LayoutId::Unknown;
-    }
-
-    DWORD threadId = GetWindowThreadProcessId(foreground, NULL);
-    HKL layout = GetKeyboardLayout(threadId);
-    WORD lang = LOWORD(reinterpret_cast<UINT_PTR>(layout));
-
-    if (lang == 0x419) return LayoutId::Ru;
-    if (lang == 0x409) return LayoutId::En;
-    return LayoutId::Unknown;
-}
-
-LPCWSTR getLayoutText(LayoutId layoutId)
-{
-    switch (layoutId)
-    {
-    case LayoutId::En: return L"EN";
-    case LayoutId::Ru: return L"RU";
-    default: return L"??";
-    }
-}
-
-COLORREF getTargetColor(LayoutId layoutId)
-{
-    switch (layoutId)
-    {
-    case LayoutId::En: return RGB(0, 255, 0);
-    case LayoutId::Ru: return RGB(0, 128, 255);
-    default: return RGB(180, 180, 180);
-    }
-}
-
-COLORREF lerpColor(COLORREF from, COLORREF to, float t)
-{
-    BYTE r = static_cast<BYTE>(GetRValue(from) + (GetRValue(to) - GetRValue(from)) * t);
-    BYTE g = static_cast<BYTE>(GetGValue(from) + (GetGValue(to) - GetGValue(from)) * t);
-    BYTE b = static_cast<BYTE>(GetBValue(from) + (GetBValue(to) - GetBValue(from)) * t);
-    return RGB(r, g, b);
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
@@ -154,93 +311,23 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         NULL, NULL, hInstance, NULL
     );
     if (!hwnd) return 1;
-    ShowWindow(hwnd, nCmdShow);
 
-    // 32-битный bitmap с альфа-каналом
-    HDC screenDC = GetDC(NULL);
-    HDC memDC = CreateCompatibleDC(screenDC);
-    if (!screenDC || !memDC) return 1;
-
-    BITMAPINFO bmi = {};
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = kWidth;
-    bmi.bmiHeader.biHeight = -kHeight;
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-
-    void* bits = nullptr;
-    HBITMAP hBitmap = CreateDIBSection(memDC, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
-    if (!hBitmap || !bits) return 1;
-    HGDIOBJ oldBmp = SelectObject(memDC, hBitmap);
-
-    HFONT hFont = CreateFontW(
-        12, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-        DEFAULT_PITCH | FF_SWISS, L"Segoe UI"
-    );
-    if (!hFont) return 1;
-    HGDIOBJ oldFont = SelectObject(memDC, hFont);
-    SetBkMode(memDC, TRANSPARENT);
-
-    LayoutId lastLayout = LayoutId::Unknown;
-    LPCWSTR lastText = getLayoutText(lastLayout);
-    COLORREF currentColor = RGB(0, 0, 0);
-    COLORREF targetColor = getTargetColor(lastLayout);
-
-    MSG msg = {};
-    bool running = true;
-    SIZE size = {kWidth, kHeight};
-    POINT zero = {0, 0};
-    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-
-    while (running)
+    if (!initRenderResources())
     {
-        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-        {
-            if (msg.message == WM_QUIT)
-            {
-                running = false;
-                break;
-            }
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-
-        LayoutId layoutId = getLayoutId();
-        LPCWSTR text = getLayoutText(layoutId);
-        // если язык изменился — меняем целевой цвет
-        if (layoutId != lastLayout)
-        {
-            lastLayout = layoutId;
-            lastText = text;
-            targetColor = getTargetColor(layoutId);
-        }
-
-        // плавная интерполяция цвета (fade)
-        currentColor = lerpColor(currentColor, targetColor, 0.2f);
-
-        // рисуем текст на прозрачном фоне
-        std::memset(bits, 0, kWidth * kHeight * 4);
-        SetTextColor(memDC, currentColor);
-        TextOutW(memDC, 0, 0, lastText, lstrlenW(lastText));
-
-        // мгновенная позиция overlay у курсора
-        POINT pt;
-        GetCursorPos(&pt);
-        POINT pos = {pt.x + kOffsetPx, pt.y + kOffsetPx};
-
-        UpdateLayeredWindow(hwnd, screenDC, &pos, &size, memDC, &zero, RGB(0, 0, 0), &blend, ULW_ALPHA);
-
-        Sleep(kFrameDelayMs);
+        DestroyWindow(hwnd);
+        return 1;
     }
 
-    SelectObject(memDC, oldFont);
-    SelectObject(memDC, oldBmp);
-    DeleteObject(hFont);
-    DeleteObject(hBitmap);
-    DeleteDC(memDC);
-    ReleaseDC(NULL, screenDC);
+    SetTimer(hwnd, ID_RENDER_TIMER, kActiveFrameDelayMs, NULL);
+    ShowWindow(hwnd, nCmdShow);
+    renderOverlay(hwnd, true);
+
+    MSG msg = {};
+    while (GetMessage(&msg, NULL, 0, 0) > 0)
+    {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
     return 0;
 }
