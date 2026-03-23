@@ -65,7 +65,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         switch (LOWORD(wParam))
         {
         case kMenuAboutId:
-            MessageBox(hwnd, L"Keyboard Layout Overlay\nVersion 1.0", L"About", MB_OK);
+            MessageBox(hwnd, L"Keyboard Layout Overlay\nVersion 1.1", L"About", MB_OK);
             return 0;
 
         case kMenuExitId:
