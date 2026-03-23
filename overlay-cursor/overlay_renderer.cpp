@@ -18,23 +18,10 @@ namespace overlay
     {
         int len = lstrlenW(text);
 
-        // Draw an outer light stroke first so the label remains visible on dark backgrounds.
-        SetTextColor(dc, RGB(255, 255, 255));
+        SetTextColor(dc, RGB(0, 0, 0));
         for (int dx = -2; dx <= 2; dx++)
         {
             for (int dy = -2; dy <= 2; dy++)
-            {
-                if (dx == 0 && dy == 0) continue;
-                if (dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1) continue;
-                TextOutW(dc, x + dx, y + dy, text, len);
-            }
-        }
-
-        // Draw a darker inner stroke for contrast against light backgrounds.
-        SetTextColor(dc, RGB(0, 0, 0));
-        for (int dx = -1; dx <= 1; dx++)
-        {
-            for (int dy = -1; dy <= 1; dy++)
             {
                 if (dx == 0 && dy == 0) continue;
                 TextOutW(dc, x + dx, y + dy, text, len);
