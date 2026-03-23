@@ -6,6 +6,23 @@
 
 namespace overlay
 {
+    namespace
+    {
+        void SetOpaqueAlphaForDrawnPixels(void* bits, int width, int height)
+        {
+            auto* pixels = static_cast<UINT32*>(bits);
+            int total = width * height;
+            for (int i = 0; i < total; i++)
+            {
+                UINT32 rgb = pixels[i] & 0x00FFFFFFU;
+                if (rgb != 0)
+                {
+                    pixels[i] = rgb | 0xFF000000U;
+                }
+            }
+        }
+    }
+
     COLORREF OverlayRenderer::LerpColor(COLORREF from, COLORREF to, float t)
     {
         BYTE r = static_cast<BYTE>(GetRValue(from) + (GetRValue(to) - GetRValue(from)) * t);
@@ -18,7 +35,8 @@ namespace overlay
     {
         int len = lstrlenW(text);
 
-        SetTextColor(dc, RGB(0, 0, 0));
+        // Avoid fully-zero RGB so post-processing can recognize outline pixels and set alpha.
+        SetTextColor(dc, RGB(10, 10, 10));
         for (int dx = -2; dx <= 2; dx++)
         {
             for (int dy = -2; dy <= 2; dy++)
@@ -161,6 +179,7 @@ namespace overlay
         constexpr int kTextPadding = 2;
 
         DrawTextWithOutline(mem_dc_, kTextPadding, kTextPadding, last_text_, current_color_);
+        SetOpaqueAlphaForDrawnPixels(bits_, kOverlayWidth, kOverlayHeight);
         UpdateLayeredWindow(hwnd, screen_dc_, &overlay_pos, &size_, mem_dc_, &zero_, RGB(0, 0, 0), &blend_, ULW_ALPHA);
 
         return layout_changed || position_changed || color_changed;
