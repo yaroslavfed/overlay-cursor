@@ -19,10 +19,9 @@ namespace overlay
         int len = lstrlenW(text);
 
         SetTextColor(dc, RGB(0, 0, 0));
-
-        for (int dx = -1; dx <= 1; dx++)
+        for (int dx = -2; dx <= 2; dx++)
         {
-            for (int dy = -1; dy <= 1; dy++)
+            for (int dy = -2; dy <= 2; dy++)
             {
                 if (dx == 0 && dy == 0) continue;
                 TextOutW(dc, x + dx, y + dy, text, len);
