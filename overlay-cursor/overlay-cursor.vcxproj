@@ -147,13 +147,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="app_constants.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="keyboard_layout.h" />
+    <ClInclude Include="overlay_renderer.h" />
     <ClInclude Include="overlay-cursor.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="tray_icon.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="keyboard_layout.cpp" />
     <ClCompile Include="overlay-cursor.cpp" />
+    <ClCompile Include="overlay_renderer.cpp" />
+    <ClCompile Include="tray_icon.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="overlay-cursor.rc" />
